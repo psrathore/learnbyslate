@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="kn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#141c18" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Kids Tracing Slate</title>
+  <style>
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+    body {
+      margin: 0; background: #1e2923; color: white; font-family: sans-serif;
+      display: flex; flex-direction: column; height: 100dvh; overflow: hidden;
+    }
+    header {
+      display: flex; flex-direction: column; gap: 8px;
+      padding: 10px 14px; background: #141c18;
+    }
+    .top-row {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    }
+    select, button {
+      padding: 8px 14px; font-size: 15px; border: none; border-radius: 8px;
+      font-weight: bold; cursor: pointer;
+    }
+    select { background: #2c3e35; color: white; flex: 1; text-align: center; }
+    #speak-btn { background: #2e7d32; color: white; display: flex; align-items: center; gap: 5px; }
+    #speak-btn:active { transform: scale(0.95); }
+    #slate-container {
+      position: relative; flex: 1; display: flex; flex-direction: column;
+      justify-content: center; align-items: center; padding: 16px;
+    }
+    #guide-text {
+      color: rgba(255, 255, 255, 0.22); pointer-events: none;
+      text-align: center; line-height: 1.2; font-weight: bold;
+    }
+    #meaning-hint {
+      position: absolute; top: 12px; font-size: 18px; color: #a5d6a7;
+      pointer-events: none; text-align: center;
+    }
+    canvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%; touch-action: none;
+    }
+    footer {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 16px; background: #141c18;
+    }
+    .color-btn {
+      width: 34px; height: 34px; border-radius: 50%; border: 2px solid #fff; padding: 0;
+    }
+    .color-btn.active { transform: scale(1.2); border-color: #4caf50; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="top-row">
+    <select id="category-select" onchange="changeCategory()">
+      <option value="kn_vowels">ಕನ್ನಡ ಸ್ವರಗಳು (Kannada Vowels)</option>
+      <option value="kn_consonants">ಕನ್ನಡ ವ್ಯಂಜನಗಳು (Kannada Consonants)</option>
+      <option value="kn_words">ಕನ್ನಡ ಪದಗಳು (Kannada Words)</option>
+      <option value="kn_numbers">ಕನ್ನಡ ಸಂಖ್ಯೆಗಳು (Kannada ೧ - ೧೦೦)</option>
+      <option value="en_upper">English A - Z (Uppercase)</option>
+      <option value="en_lower">English a - z (Lowercase)</option>
+      <option value="en_words">English Words</option>
+      <option value="en_numbers">English Numbers (1 - 100)</option>
+    </select>
+    <button id="speak-btn" onclick="speakCurrent()">🔊 Listen</button>
+  </div>
+  <div class="top-row">
+    <button onclick="changeItem(-1)">◀ Prev</button>
+    <div id="item-counter" style="font-size: 16px; font-weight: bold;">1 / 15</div>
+    <button onclick="changeItem(1)">Next ▶</button>
+  </div>
+</header>
+
+<div id="slate-container">
+  <div id="meaning-hint"></div>
+  <div id="guide-text">ಅ</div>
+  <canvas id="canvas"></canvas>
+</div>
+
+<footer>
+  <div style="display: flex; gap: 10px;">
+    <button class="color-btn active" style="background: #ffffff;" onclick="setColor('#ffffff', this)"></button>
+    <button class="color-btn" style="background: #ffeb3b;" onclick="setColor('#ffeb3b', this)"></button>
+    <button class="color-btn" style="background: #ff80ab;" onclick="setColor('#ff80ab', this)"></button>
+    <button class="color-btn" style="background: #4fc3f7;" onclick="setColor('#4fc3f7', this)"></button>
+  </div>
+  <button style="background: #e53935; color: white;" onclick="clearCanvas()">Clear</button>
+</footer>
+
+<script>
+  const knDigits = ['೦', '೧', '೨', '೩', '೪', '೫', '೬', '೭', '೮', '೯'];
+  function toKannadaNum(n) {
+    return String(n).split('').map(function(d) {
+      return knDigits[parseInt(d, 10)];
+    }).join('');
+  }
+
+  const knNumbersList = Array.from({ length: 100 }, function(_, i) {
+    const num = i + 1;
+    const knText = toKannadaNum(num);
+    return { text: knText, hint: "Number " + num, speak: String(num), lang: "kn-IN" };
+  });
+
+  const enNumbersList = Array.from({ length: 100 }, function(_, i) {
+    const num = i + 1;
+    return { text: String(num), hint: "Number " + num, speak: String(num), lang: "en-US" };
+  });
+
+  const enUpperList = Array.from({ length: 26 }, function(_, i) {
+    const ch = String.fromCharCode(65 + i);
+    return { text: ch, hint: "Capital " + ch, speak: ch.toLowerCase(), lang: "en-US" };
+  });
+
+  const enLowerList = Array.from({ length: 26 }, function(_, i) {
+    const ch = String.fromCharCode(97 + i);
+    return { text: ch, hint: "Small " + ch, speak: ch, lang: "en-US" };
+  });
+
+  const curriculum = {
+    kn_vowels: [
+      { text: "ಅ", hint: "a (ಅಮ್ಮ - Mother)", speak: "ಅ", lang: "kn-IN" },
+      { text: "ಆ", hint: "aa (ಆನೆ - Elephant)", speak: "ಆ", lang: "kn-IN" },
+      { text: "ಇ", hint: "i (ಇಲಿ - Rat)", speak: "ಇ", lang: "kn-IN" },
+      { text: "ಈ", hint: "ee (ಈಶ್ವರ)", speak: "ಈ", lang: "kn-IN" },
+      { text: "ಉ", hint: "u (ಉಂಗುರ - Ring)", speak: "ಉ", lang: "kn-IN" },
+      { text: "ಊ", hint: "oo (ಊಟ - Meal)", speak: "ಊ", lang: "kn-IN" },
+      { text: "ಋ", hint: "ru (ಋಷಿ - Sage)", speak: "ಋ", lang: "kn-IN" },
+      { text: "ಎ", hint: "e (ಎಲೆ - Leaf)", speak: "ಎ", lang: "kn-IN" },
+      { text: "ಏ", hint: "ae (ಏಣಿ - Ladder)", speak: "ಏ", lang: "kn-IN" },
+      { text: "ಐ", hint: "ai (ಐದು - Five)", speak: "ಐ", lang: "kn-IN" },
+      { text: "ಒ", hint: "o (ಒಂಟೆ - Camel)", speak: "ಒ", lang: "kn-IN" },
+      { text: "ಓ", hint: "oo (ಓದು - Read)", speak: "ಓ", lang: "kn-IN" },
+      { text: "ಔ", hint: "au (ಔಷಧ - Medicine)", speak: "ಔ", lang: "kn-IN" },
+      { text: "ಅಂ", hint: "am (ಅಂಗಡಿ - Shop)", speak: "ಅಂ", lang: "kn-IN" },
+      { text: "ಅಃ", hint: "aha", speak: "ಅಃ", lang: "kn-IN" }
+    ],
+    kn_consonants: [
+      { text: "ಕ", hint: "ka (ಕಮಲ - Lotus)", speak: "ಕ", lang: "kn-IN" },
+      { text: "ಖ", hint: "kha (ಖಡ್ಗ - Sword)", speak: "ಖ", lang: "kn-IN" },
+      { text: "ಗ", hint: "ga (ಗಣಪತಿ)", speak: "ಗ", lang: "kn-IN" },
+      { text: "ಘ", hint: "gha (ಘಂಟೆ - Bell)", speak: "ಘ", lang: "kn-IN" },
+      { text: "ಙ", hint: "nga", speak: "ಙ", lang: "kn-IN" },
+      { text: "ಚ", hint: "cha (ಚಮಚ - Spoon)", speak: "ಚ", lang: "kn-IN" },
+      { text: "ಛ", hint: "chha (ಛತ್ರಿ - Umbrella)", speak: "ಛ", lang: "kn-IN" },
+      { text: "ಜ", hint: "ja (ಜನ - People)", speak: "ಜ", lang: "kn-IN" },
+      { text: "ಝ", hint: "jha (ಝರಿ - Stream)", speak: "ಝ", lang: "kn-IN" },
+      { text: "ಞ", hint: "nya", speak: "ಞ", lang: "kn-IN" },
+      { text: "ಟ", hint: "ta (ಟಗರು - Ram)", speak: "ಟ", lang: "kn-IN" },
+      { text: "ಠ", hint: "tha (ಠಕ್ಕ)", speak: "ಠ", lang: "kn-IN" },
+      { text: "ಡ", hint: "da (ಡಮರು)", speak: "ಡ", lang: "kn-IN" },
+      { text: "ಢ", hint: "dha (ಢಕ್ಕೆ)", speak: "ಢ", lang: "kn-IN" },
+      { text: "ಣ", hint: "na (ಹಣ - Money)", speak: "ಣ", lang: "kn-IN" },
+      { text: "ತ", hint: "ta (ತಬಲ)", speak: "ತ", lang: "kn-IN" },
+      { text: "ಥ", hint: "tha (ರಥ - Chariot)", speak: "ಥ", lang: "kn-IN" },
+      { text: "ದ", hint: "da (ದಸರಾ)", speak: "ದ", lang: "kn-IN" },
+      { text: "ಧ", hint: "dha (ಧನ - Wealth)", speak: "ಧ", lang: "kn-IN" },
+      { text: "ನ", hint: "na (ನವಿಲು - Peacock)", speak: "ನ", lang: "kn-IN" },
+      { text: "ಪ", hint: "pa (ಪಟ - Kite)", speak: "ಪ", lang: "kn-IN" },
+      { text: "ಫ", hint: "pha (ಫಲ - Fruit)", speak: "ಫ", lang: "kn-IN" },
+      { text: "ಬ", hint: "ba (ಬಸ್ಸು - Bus)", speak: "ಬ", lang: "kn-IN" },
+      { text: "ಭ", hint: "bha (ಭವನ - Building)", speak: "ಭ", lang: "kn-IN" },
+      { text: "ಮ", hint: "ma (ಮನೆ - House)", speak: "ಮ", lang: "kn-IN" },
+      { text: "ಯ", hint: "ya (ಯಂತ್ರ - Machine)", speak: "ಯ", lang: "kn-IN" },
+      { text: "ರ", hint: "ra (ರವಿ - Sun)", speak: "ರ", lang: "kn-IN" },
+      { text: "ಲ", hint: "la (ಲಡ್ಡು)", speak: "ಲ", lang: "kn-IN" },
+      { text: "ವ", hint: "va (ವನ - Forest)", speak: "ವ", lang: "kn-IN" },
+      { text: "ಶ", hint: "sha (ಶಂಖ - Conch)", speak: "ಶ", lang: "kn-IN" },
+      { text: "ಷ", hint: "sha (ಷಟ್ಕೋನ - Hexagon)", speak: "ಷ", lang: "kn-IN" },
+      { text: "ಸ", hint: "sa (ಸರ - Necklace)", speak: "ಸ", lang: "kn-IN" },
+      { text: "ಹ", hint: "ha (ಹಂಸ - Swan)", speak: "ಹ", lang: "kn-IN" },
+      { text: "ಳ", hint: "la (ಹಳದಿ - Yellow)", speak: "ಳ", lang: "kn-IN" }
+    ],
+    kn_words: [
+      { text: "ಅಮ್ಮ", hint: "Amma (Mother)", speak: "ಅಮ್ಮ", lang: "kn-IN" },
+      { text: "ಅಪ್ಪ", hint: "Appa (Father)", speak: "ಅಪ್ಪ", lang: "kn-IN" },
+      { text: "ಮನೆ", hint: "Mane (House)", speak: "ಮನೆ", lang: "kn-IN" },
+      { text: "ಆನೆ", hint: "Aane (Elephant)", speak: "ಆನೆ", lang: "kn-IN" },
+      { text: "ನಾಯಿ", hint: "Naayi (Dog)", speak: "ನಾಯಿ", lang: "kn-IN" },
+      { text: "ಬೆಕ್ಕು", hint: "Bekku (Cat)", speak: "ಬೆಕ್ಕು", lang: "kn-IN" },
+      { text: "ಮರ", hint: "Mara (Tree)", speak: "ಮರ", lang: "kn-IN" },
+      { text: "ಹೂವು", hint: "Hoovu (Flower)", speak: "ಹೂವು", lang: "kn-IN" },
+      { text: "ನೀರು", hint: "Neeru (Water)", speak: "ನೀರು", lang: "kn-IN" },
+      { text: "ಚಂದ್ರ", hint: "Chandra (Moon)", speak: "ಚಂದ್ರ", lang: "kn-IN" },
+      { text: "ಸೂರ್ಯ", hint: "Surya (Sun)", speak: "ಸೂರ್ಯ", lang: "kn-IN" },
+      { text: "ಶಾಲೆ", hint: "Shaale (School)", speak: "ಶಾಲೆ", lang: "kn-IN" }
+    ],
+    kn_numbers: knNumbersList,
+    en_upper: enUpperList,
+    en_lower: enLowerList,
+    en_words: [
+      { text: "CAT", hint: "Cat", speak: "Cat", lang: "en-US" },
+      { text: "DOG", hint: "Dog", speak: "Dog", lang: "en-US" },
+      { text: "SUN", hint: "Sun", speak: "Sun", lang: "en-US" },
+      { text: "MOON", hint: "Moon", speak: "Moon", lang: "en-US" },
+      { text: "TREE", hint: "Tree", speak: "Tree", lang: "en-US" },
+      { text: "BALL", hint: "Ball", speak: "Ball", lang: "en-US" },
+      { text: "STAR", hint: "Star", speak: "Star", lang: "en-US" },
+      { text: "FISH", hint: "Fish", speak: "Fish", lang: "en-US" },
+      { text: "APPLE", hint: "Apple", speak: "Apple", lang: "en-US" },
+      { text: "HOUSE", hint: "House", speak: "House", lang: "en-US" }
+    ],
+    en_numbers: enNumbersList
+  };
+
+  let currentCat = "kn_vowels";
+  let idx = 0;
+  let drawing = false;
+  let color = "#ffffff";
+  let strokeWidth = 18;
+
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+
+  function applyBrushStyle() {
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = color;
+  }
+
+  function resize() {
+    canvas.width = canvas.offsetWidth;
+    canvas.height = canvas.offsetHeight;
+    applyBrushStyle();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  function speakCurrent() {
+    if (!("speechSynthesis" in window)) return;
+    window.speechSynthesis.cancel();
+    const item = curriculum[currentCat][idx];
+    const utterance = new SpeechSynthesisUtterance(item.speak);
+    utterance.lang = item.lang;
+    utterance.rate = 0.85;
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function renderItem() {
+    const list = curriculum[currentCat];
+    const item = list[idx];
+    const guide = document.getElementById("guide-text");
+    guide.textContent = item.text;
+
+    const len = item.text.length;
+    if (len === 1) {
+      guide.style.fontSize = "52vmin";
+      strokeWidth = 18;
+    } else if (len === 2) {
+      guide.style.fontSize = "38vmin";
+      strokeWidth = 15;
+    } else if (len === 3) {
+      guide.style.fontSize = "28vmin";
+      strokeWidth = 13;
+    } else {
+      guide.style.fontSize = "20vmin";
+      strokeWidth = 11;
+    }
+
+    document.getElementById("meaning-hint").textContent = item.hint;
+    document.getElementById("item-counter").textContent = (idx + 1) + " / " + list.length;
+    clearCanvas();
+  }
+
+  function changeCategory() {
+    currentCat = document.getElementById("category-select").value;
+    idx = 0;
+    renderItem();
+  }
+
+  function changeItem(step) {
+    const list = curriculum[currentCat];
+    idx = (idx + step + list.length) % list.length;
+    renderItem();
+  }
+
+  function getPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    let clientX = e.clientX;
+    let clientY = e.clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    }
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  }
+
+  function start(e) {
+    if (e.cancelable) e.preventDefault();
+    drawing = true;
+    applyBrushStyle();
+    const pos = getPos(e);
+    ctx.beginPath();
+    ctx.moveTo(pos.x, pos.y);
+    ctx.lineTo(pos.x + 0.1, pos.y + 0.1);
+    ctx.stroke();
+  }
+
+  function draw(e) {
+    if (!drawing) return;
+    if (e.cancelable) e.preventDefault();
+    const pos = getPos(e);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+  }
+
+  function stop() {
+    drawing = false;
+  }
+
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", draw);
+  window.addEventListener("mouseup", stop);
+
+  canvas.addEventListener("touchstart", start, { passive: false });
+  canvas.addEventListener("touchmove", draw, { passive: false });
+  window.addEventListener("touchend", stop);
+
+  window.addEventListener("keydown", function(e) {
+    if (e.key === "ArrowLeft") changeItem(-1);
+    if (e.key === "ArrowRight") changeItem(1);
+    if (e.key === "Escape" || e.key === "Backspace") clearCanvas();
+    if (e.key === " ") {
+      e.preventDefault();
+      speakCurrent();
+    }
+  });
+
+  function setColor(c, btn) {
+    color = c;
+    document.querySelectorAll(".color-btn").forEach(function(b) {
+      b.classList.remove("active");
+    });
+    btn.classList.add("active");
+    applyBrushStyle();
+  }
+
+  function clearCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    applyBrushStyle();
+  }
+
+  renderItem();
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js");
+  }
+</script>
+</body>
+</html>

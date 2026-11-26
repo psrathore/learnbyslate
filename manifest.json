@@ -1,0 +1,9 @@
+{
+  "name": "Kids Tracing Slate",
+  "short_name": "Tracing Slate",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#1e2923",
+  "theme_color": "#141c18",
+  "orientation": "any"
+}
